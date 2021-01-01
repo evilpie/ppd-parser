@@ -1,0 +1,51 @@
+// PPD-FILE = HEADER +(DATA / COMMENT / LINE-END)
+file = { header ~ (data | comment | end | NEWLINE)+ }
+
+// HEADER   = "*" 0x50.50.44.2D.41.64.6F.62.65 ":"   ; *PPD-Adobe:
+//            *WSP DQUOTE "4.3" DQUOTE LINE-END
+header = { "*PPD-Adobe:" ~ WSP ~ DQUOTE ~ "4.3" ~ DQUOTE ~ NEWLINE }
+
+// COMMENT  = "*%" *TCHAR LINE-END
+comment = { "*%" ~ TCHAR* ~ NEWLINE }
+
+// DATA     = "*" 1*KCHAR [ WSP 1*KCHAR [ "/" 1*TCHAR ] ] ":"
+//            1*(*WSP VALUE) LINE-END
+data = { "*" ~ key ~ ":"
+         ~ (WSP* ~ value)+ ~ NEWLINE }
+
+// The definition of key seems to be incorrect?
+// It doesn't parse "*OpenUI *PageSize/Media Size: PickOne"
+// because KCHAR doesn't include the * (star)
+key = { key_main ~ (WSP ~ key_sub1)? ~ ("/" ~ key_sub2)? }
+key_main = { KCHAR+ }
+key_sub1 = { KCHAR2+ }
+key_sub2 = { TCHAR2+ }
+
+// VALUE    = 1*TCHAR / DQUOTE 1*SCHAR DQUOTE
+value = { (DQUOTE ~ SCHAR+ ~ DQUOTE) | TCHAR+ }
+
+// There seems to be an "*End" after at least multi-line strings,
+// which aren't captured by the grammar.
+end = { "*End" ~ NEWLINE }
+
+// KCHAR    = ALPHA / DIGIT / "_" / "." / "-"
+KCHAR = _{ ASCII_ALPHA | ASCII_DIGIT | "_" | "." | "-" }
+
+// KCHAR with *
+KCHAR2 = _{ KCHAR | "*" }
+
+// SCHAR    = LINE-END / WSP / %x21 / %x23-7E / %xA0-FF
+SCHAR = _{ NEWLINE | WSP | "\u{21}" | '\u{23}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+
+// TCHAR    = %x20-7E / %xA0-FF
+TCHAR = _{ '\u{20}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+
+// TCHAR without ':' (0x3A)
+TCHAR2 = _{ '\u{20}'..'\u{39}' | '\u{3B}' ..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+
+// LINE-END = CR / LF / CR LF
+
+// these are not defined
+
+WSP = _{ " " }
+DQUOTE = _{ "\"" }
