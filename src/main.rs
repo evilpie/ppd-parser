@@ -5,12 +5,15 @@ extern crate pest_derive;
 use pest::iterators::Pair;
 use pest::Parser;
 
+use serde::{Deserialize, Serialize};
+
+use std::env;
+use std::error::Error;
+use std::fs;
+
 #[derive(Parser)]
 #[grammar = "ppd.pest"]
 pub struct PPDParser;
-
-use std::error::Error;
-use std::fs;
 
 #[derive(Clone, Debug)]
 struct Key<'a> {
@@ -53,20 +56,40 @@ fn parse(input: &str) -> Result<Vec<Attribute>, Box<dyn Error>> {
     Ok(attributes)
 }
 
-fn interpret(attributes: Vec<Attribute>) {
+#[derive(Debug, Serialize, Deserialize)]
+struct Setting {
+    main: String,
+    description: String,
+    options: Vec<(String, String)>,
+}
+
+fn interpret(attributes: Vec<Attribute>) -> Vec<Setting> {
+    let mut settings = Vec::new();
+
     let mut in_ui_for: Option<Key> = None;
+    let mut options = Vec::new();
 
     for attr in attributes {
         match attr.key.main {
             "CloseUI" => {
+                if let Some(in_ui_for) = in_ui_for {
+                    settings.push(Setting {
+                        main: in_ui_for.sub1.unwrap().split_at(1).1.to_owned(),
+                        description: in_ui_for.sub2.unwrap_or(&"").to_owned(),
+                        options,
+                    });
+                    options = Vec::new();
+                }
+
                 in_ui_for = None;
             }
-            "OpenUI" if attr.value == "PickOne" => {
+            "OpenUI" => {
                 // Looks like:
                 //   *OpenUI *ColorModel/Color Mode: PickOne
                 // Or
                 //   *OpenUI *CNIJGrayScale/Grayscale Printing: PickOne
                 in_ui_for = Some(attr.key.clone());
+                options = Vec::new()
             }
             _ => {}
         }
@@ -76,20 +99,26 @@ fn interpret(attributes: Vec<Attribute>) {
             let (_, sub1) = in_ui_for.sub1.unwrap().split_at(1);
 
             if attr.key.main == sub1 {
-                println!(
-                    "found match {:?} {:?} {:?}",
-                    sub1, attr.key.sub1, attr.key.sub2
-                );
-                println!("  {:?}", in_ui_for);
+                options.push((
+                    attr.key.sub1.unwrap_or("").to_owned(),
+                    attr.key.sub2.unwrap_or("").to_owned(),
+                ));
             }
         }
     }
+
+    return settings;
 }
 
 fn main() {
-    let unparsed_file = fs::read_to_string("test.ppd").expect("cannot read file");
+    let path = env::args()
+        .nth(1)
+        .expect("missing <file> command lind argument");
+    let unparsed_file = fs::read_to_string(path).expect("cannot read file");
 
     let attributes = parse(&unparsed_file).unwrap();
+    let settings = interpret(attributes);
 
-    interpret(attributes);
+    let json_string = serde_json::to_string_pretty(&settings).unwrap();
+    println!("{}", json_string);
 }

@@ -1,3 +1,6 @@
+// ABNF definiton from https://opensource.apple.com/source/cups/cups-136/cups/doc/help/spec-ppd.html
+// But heavily modified to parse PPD files in the wild.
+
 // PPD-FILE = HEADER +(DATA / COMMENT / LINE-END)
 file = { header ~ (data | comment | end | NEWLINE)+ }
 
@@ -6,7 +9,8 @@ file = { header ~ (data | comment | end | NEWLINE)+ }
 header = { "*PPD-Adobe:" ~ WSP ~ DQUOTE ~ "4.3" ~ DQUOTE ~ NEWLINE }
 
 // COMMENT  = "*%" *TCHAR LINE-END
-comment = { "*%" ~ TCHAR* ~ NEWLINE }
+// Extension: Accept any character
+comment = { "*%" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
 
 // DATA     = "*" 1*KCHAR [ WSP 1*KCHAR [ "/" 1*TCHAR ] ] ":"
 //            1*(*WSP VALUE) LINE-END
@@ -14,22 +18,27 @@ data = { "*" ~ key ~ ":"
          ~ (WSP* ~ value)+ ~ NEWLINE }
 
 // The definition of key seems to be incorrect?
-// It doesn't parse "*OpenUI *PageSize/Media Size: PickOne"
+// It doesn't parse: *OpenUI *PageSize/Media Size: PickOne
 // because KCHAR doesn't include the * (star)
+// It doesn't parse: *FoomaticRIPOptionSetting PageSize=Custom: "
+// because KCHAR doesn't include the = (equals)
+// It doesn't parse: *?FileSystem:
 key = { key_main ~ (WSP ~ key_sub1)? ~ ("/" ~ key_sub2)? }
 key_main = { KCHAR+ }
 key_sub1 = { KCHAR2+ }
 key_sub2 = { TCHAR2+ }
 
 // VALUE    = 1*TCHAR / DQUOTE 1*SCHAR DQUOTE
-value = { (DQUOTE ~ SCHAR+ ~ DQUOTE) | TCHAR+ }
+// Extension: Handle trailing whitespace after quoted string
+value = { (DQUOTE ~ SCHAR+ ~ DQUOTE ~ WSP*) | TCHAR+ }
 
 // There seems to be an "*End" after at least multi-line strings,
 // which aren't captured by the grammar.
-end = { "*End" ~ NEWLINE }
+end = { "*End" ~ WSP* ~ NEWLINE }
 
 // KCHAR    = ALPHA / DIGIT / "_" / "." / "-"
-KCHAR = _{ ASCII_ALPHA | ASCII_DIGIT | "_" | "." | "-" }
+// Extension: Accept = and ?
+KCHAR = _{ ASCII_ALPHA | ASCII_DIGIT | "_" | "." | "-" | "=" | "?" }
 
 // KCHAR with *
 KCHAR2 = _{ KCHAR | "*" }
@@ -41,11 +50,12 @@ SCHAR = _{ NEWLINE | WSP | "\u{21}" | '\u{23}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
 TCHAR = _{ '\u{20}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
 
 // TCHAR without ':' (0x3A)
-TCHAR2 = _{ '\u{20}'..'\u{39}' | '\u{3B}' ..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+TCHAR2 = _{ '\u{20}'..'\u{39}' | '\u{3B}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
 
 // LINE-END = CR / LF / CR LF
 
 // these are not defined
+// found PPD with TABs 
 
-WSP = _{ " " }
+WSP = _{ " " | "\t" }
 DQUOTE = _{ "\"" }
