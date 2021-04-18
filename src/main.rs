@@ -46,7 +46,7 @@ fn parse(input: &str) -> Result<Vec<Attribute>, Box<dyn Error>> {
             Rule::data => {
                 let mut inner = line.into_inner();
                 let key = parse_key(inner.next().unwrap());
-                let value = inner.next().unwrap().as_str();
+                let value = inner.next().map(|value| value.as_str()).unwrap_or("");
                 attributes.push(Attribute { key, value })
             }
             _ => {}

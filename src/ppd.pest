@@ -2,20 +2,29 @@
 // But heavily modified to parse PPD files in the wild.
 
 // PPD-FILE = HEADER +(DATA / COMMENT / LINE-END)
-file = { header ~ (data | comment | end | NEWLINE)+ }
+// Extension: Allow empty line with whitespace
+file = {
+  SOI ~
+  header ~ (data | comment | end | empty_line | LINE_END )+ ~
+  EOI
+}
 
 // HEADER   = "*" 0x50.50.44.2D.41.64.6F.62.65 ":"   ; *PPD-Adobe:
 //            *WSP DQUOTE "4.3" DQUOTE LINE-END
-header = { "*PPD-Adobe:" ~ WSP ~ DQUOTE ~ "4.3" ~ DQUOTE ~ NEWLINE }
+// Extension: Support version 4.2
+header = { "*PPD-Adobe:" ~ WSP ~ DQUOTE ~ ( "4.3" | "4.2" ) ~ DQUOTE ~ LINE_END }
 
 // COMMENT  = "*%" *TCHAR LINE-END
 // Extension: Accept any character
-comment = { "*%" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
+comment = { "*%" ~ (!LINE_END ~ ANY)* ~ (LINE_END | EOI) }
 
 // DATA     = "*" 1*KCHAR [ WSP 1*KCHAR [ "/" 1*TCHAR ] ] ":"
 //            1*(*WSP VALUE) LINE-END
+// Extension: Allow trailing whitespace, is this really not covered?
+// Allow missing value?
+// > *RIIRIPSFont NimbusRoman-Bold:
 data = { "*" ~ key ~ ":"
-         ~ (WSP* ~ value)+ ~ NEWLINE }
+         ~ (WSP* ~ value)* ~ WSP* ~ (LINE_END | EOI) }
 
 // The definition of key seems to be incorrect?
 // It doesn't parse: *OpenUI *PageSize/Media Size: PickOne
@@ -23,39 +32,47 @@ data = { "*" ~ key ~ ":"
 // It doesn't parse: *FoomaticRIPOptionSetting PageSize=Custom: "
 // because KCHAR doesn't include the = (equals)
 // It doesn't parse: *?FileSystem:
-key = { key_main ~ (WSP ~ key_sub1)? ~ ("/" ~ key_sub2)? }
+
+// *WSP not WSP 1*KCHAR
+key = { WSP? ~ key_main ~ (WSP* ~ key_sub1)? ~ ("/" ~ key_sub2)? }
 key_main = { KCHAR+ }
 key_sub1 = { KCHAR2+ }
 key_sub2 = { TCHAR2+ }
 
 // VALUE    = 1*TCHAR / DQUOTE 1*SCHAR DQUOTE
 // Extension: Handle trailing whitespace after quoted string
-value = { (DQUOTE ~ SCHAR+ ~ DQUOTE ~ WSP*) | TCHAR+ }
+value = { (DQUOTE ~ SCHAR+ ~ DQUOTE) | TCHAR+ }
 
 // There seems to be an "*End" after at least multi-line strings,
 // which aren't captured by the grammar.
-end = { "*End" ~ WSP* ~ NEWLINE }
+end = { "*End" ~ WSP* ~ (LINE_END | EOI) }
+
+// Extension: line white just whitespace
+empty_line = { WSP+ ~ (LINE_END | EOI) }
 
 // KCHAR    = ALPHA / DIGIT / "_" / "." / "-"
-// Extension: Accept = and ?
-KCHAR = _{ ASCII_ALPHA | ASCII_DIGIT | "_" | "." | "-" | "=" | "?" }
+// Extension: Accept =, ?, +, (, ), &
+KCHAR = _{ ASCII_ALPHA | ASCII_DIGIT | "_" | "." | "-" | "=" | "?" | "+" | "(" | ")" | "&" }
 
 // KCHAR with *
 KCHAR2 = _{ KCHAR | "*" }
 
 // SCHAR    = LINE-END / WSP / %x21 / %x23-7E / %xA0-FF
-SCHAR = _{ NEWLINE | WSP | "\u{21}" | '\u{23}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+SCHAR = _{ LINE_END | WSP | "\u{21}" | '\u{23}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
 
 // TCHAR    = %x20-7E / %xA0-FF
 TCHAR = _{ '\u{20}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
 
 // TCHAR without ':' (0x3A)
-TCHAR2 = _{ '\u{20}'..'\u{39}' | '\u{3B}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+// TCHAR2 = _{ '\u{20}'..'\u{39}' | '\u{3B}'..'\u{7E}' | '\u{A0}'..'\u{FF}' }
+TCHAR2 = { (!":" ~ ANY) }
 
 // LINE-END = CR / LF / CR LF
+// 240A Symbol for Line Feed (LOL!)
+// 240D Symbol for CR
+LINE_END = { NEWLINE | "\u{240A}" | "\u{240D}" | "\u{240D}\u{240A}" }
 
 // these are not defined
 // found PPD with TABs 
-
 WSP = _{ " " | "\t" }
 DQUOTE = _{ "\"" }
